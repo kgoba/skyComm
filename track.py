@@ -2,7 +2,9 @@
 
 from pyorbital.orbital import Orbital
 from pyorbital import astronomy
+
 from datetime import datetime
+import argparse
 import urllib2
 import time
 import math
@@ -12,6 +14,7 @@ import os.path
 OBS_LAT = 51.05
 OBS_LON = 3.7
 OBS_ALT = 36
+OBS_HORIZON = 5
 
 class TLEData:
     SOURCES = ['amateur.txt', 'cubesat.txt', 'stations.txt', 'weather.txt']
@@ -81,7 +84,8 @@ class TLEData:
                     satID = orb.tle.satnumber
                     self.orbByID[satID] = orb
                 except:
-                    print "Failed to create TLE for", name
+                    #print "Failed to create TLE for", name
+                    pass
 
         nameFix = dict()
         try:
@@ -107,12 +111,13 @@ class TLEData:
                 status = fields[7].rstrip()
                 
                 if not satID:
-                    print "Ignoring", name, satID, status
+                    #print "Ignoring", name, satID, status
                     #if status == 'active' or status == 'Operational':
                         #print name, name in self.orbByName
                         #if name in nameFix:
                         #    name = nameFix[name]
                         #    print name                        
+                    pass
                 else:
                     self.satByID[satID] = (uplink, downlink, beacon, mode, status, name)
                     
@@ -136,6 +141,9 @@ class TLEData:
         if satID in self.satByID:
             return self.satByID[satID]
         return None
+
+    def getNextPasses(self, satID, time, length, lat, lon, alt):
+        return self.orbByID[satID].get_next_passes(time, length, lon, lat, alt)
 
     def getAzimElev(self, satID, time, lat, lon, alt):
         return self.orbByID[satID].get_observer_look(time, lon, lat, alt)
@@ -173,63 +181,110 @@ def simpleAzim(angle):
     part = int(part + 0.5) % len(AZIM)
     return AZIM[part]
 
-def main():
-    orbData = TLEData()
-        
-    while True:   
-        # calculate current satellite data
-        visible = list()
-        now = datetime.utcnow()
-        for satID in orbData.getSatellites():
-            try:
-                (azim, elev) = orbData.getAzimElev(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
-                if elev > 0:
-                    (alt, dist) = orbData.getDistance(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
-                    visible.append((satID, azim, elev, dist, alt))
-            except NotImplementedError:
-                pass
+def liveTrack(orbData):
+    # calculate current satellite data
+    visible = list()
+    now = datetime.utcnow()
+    for satID in orbData.getSatellites():
+        try:
+            (azim, elev) = orbData.getAzimElev(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
+            if elev > 0:
+                (alt, dist) = orbData.getDistance(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
+                visible.append((satID, azim, elev, dist, alt))
+        except NotImplementedError:
+            pass
 
-        # update display
-        print("\x1b[H\x1b[2J")     
-        print "%3s %-25s %7s %4s %7s %-25s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm')
-        print "-----------------------------------------------------------------------------------------------"
-        row = 1   
-        for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
-            name = orbData.getName(satID)
-            comm = orbData.getSatInfo(satID)
-            (up, down, beacon, mode, status, name2) = comm
-            if status != 'active' and status != 'Operational':
-                continue
-            commList = list()
-            #commList.append(status)
-            if up: commList.append('U[%s]' % up)
-            if down: commList.append('D[%s]' % down)
-            if beacon: commList.append('B[%s]' % beacon)
-            if mode: commList.append('M[%s]' % mode)
-            comm = ' '.join(commList)
-            print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
-            row += 1
-        print "-----------------------------------------------------------------------------------------------"
-        row = 1   
-        for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
-            name = orbData.getName(satID)
-            comm = orbData.getSatInfo(satID)
-            (up, down, beacon, mode, status, name2) = comm
-            if status == 'active' or status == 'Operational':
-                continue
-            commList = list()
-            commList.append(status)
-            #if up: commList.append('U[%s]' % up)
-            #if down: commList.append('D[%s]' % down)
-            #if beacon: commList.append('B[%s]' % beacon)
-            #if mode: commList.append('M[%s]' % mode)
-            comm = ' '.join(commList)
-            print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
-            row += 1
-            
-        print 
-        # sleep
-        time.sleep(1)
+    # clear display
+    print "\x1b[H\x1b[2J"
     
-if __name__ == '__main__':
-    main()
+    # update display
+    print "%3s %-25s %7s %4s %7s %-25s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm')
+    print "-----------------------------------------------------------------------------------------------"
+    row = 1   
+    for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
+        name = orbData.getName(satID)
+        comm = orbData.getSatInfo(satID)
+        (up, down, beacon, mode, status, name2) = comm
+        if status != 'active' and status != 'Operational':
+            continue
+        commList = list()
+        #commList.append(status)
+        if up: commList.append('U[%s]' % up)
+        if down: commList.append('D[%s]' % down)
+        if beacon: commList.append('B[%s]' % beacon)
+        if mode: commList.append('M[%s]' % mode)
+        comm = ' '.join(commList)
+        print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
+        row += 1
+    print "-----------------------------------------------------------------------------------------------"
+    row = 1   
+    for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
+        name = orbData.getName(satID)
+        comm = orbData.getSatInfo(satID)
+        (up, down, beacon, mode, status, name2) = comm
+        if status == 'active' or status == 'Operational':
+            continue
+        commList = list()
+        commList.append(status)
+        #if up: commList.append('U[%s]' % up)
+        #if down: commList.append('D[%s]' % down)
+        #if beacon: commList.append('B[%s]' % beacon)
+        #if mode: commList.append('M[%s]' % mode)
+        comm = ' '.join(commList)
+        print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
+        row += 1
+
+def predict(args, orbData):
+    now = datetime.utcnow()
+    future = 5
+    passList = list()
+    for satID in orbData.getSatellites():
+        passes = orbData.getNextPasses(satID, now, future, args.lat, args.lon, args.alt)
+        for (time_rise, time_set, time_max) in passes:
+            (azim, elev) = orbData.getAzimElev(satID, time_max, args.lat, args.lon, args.alt)
+            if elev < args.horizon:
+                continue
+            (alt, dist) = orbData.getDistance(satID, time_max, args.lat, args.lon, args.alt)
+            passList.append((satID, time_max, azim, elev, dist))
+            
+    row = 1
+    for (satID, time_max, azim, elev, dist) in sorted(passList, key = lambda x: -x[3]):
+        name = orbData.getName(satID)
+        fromNow = time_max - now
+        comm = orbData.getSatInfo(satID)
+        (up, down, beacon, mode, status, name2) = comm
+        if status != 'active' and status != 'Operational':
+            continue
+        commList = list()
+        #commList.append(status)
+        if up: commList.append('U[%s]' % up)
+        if down: commList.append('D[%s]' % down)
+        if beacon: commList.append('B[%s]' % beacon)
+        if mode: commList.append('M[%s]' % mode)
+        comm = ' '.join(commList)
+        print "%3d %-25s %4.0f %3.0f %5.0f %9s (%3.0f min) %s" % (row, name, azim, elev, dist, time_max.strftime('%H:%M:%S'), fromNow.total_seconds()/60, comm)
+        row += 1
+        #print row, satID, passes
+
+def main(args):
+    orbData = TLEData()
+    
+    if args.command == 'track':
+        while True:   
+            liveTrack(orbData)
+            # sleep
+            time.sleep(1)
+    elif args.command == 'predict':
+        predict(args, orbData)
+    
+if __name__ == '__main__':    
+    parser = argparse.ArgumentParser(description='Track the amateur satellites in orbit')
+    parser.add_argument('command', choices=['track', 'predict'], nargs='?', default='track', help='Action: either track live positions or predict next passes')
+    parser.add_argument('--lat', help='Observer latitude (degrees floating point)', type=float, default=OBS_LAT)
+    parser.add_argument('--lon', help='Observer longitude (degrees floating point)', type=float, default=OBS_LON)
+    parser.add_argument('--alt', help='Observer altitude (meters)', type=float, default=OBS_ALT)
+    parser.add_argument('--horizon', help='Horizon elevation (degrees)', type=float, default=OBS_HORIZON)
+    parser.add_argument('--sort', choices=['elev', 'time', 'name'], nargs='?', default='elev', help='Sorting key')
+
+    args = parser.parse_args()
+    main(args)
