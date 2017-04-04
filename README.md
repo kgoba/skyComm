@@ -6,6 +6,15 @@ The list of active satellite and their frequencies is collected from the website
 
 The orbital parameters are obtained from another excellent website, CelesTrack (https://www.celestrak.com/NORAD/elements/). 
 
+## Installation
+
+Currently there are no installation scripts. Before you run `skyComm`, install the necessary prerequisites by running
+```bash
+sudo -H pip install -r requirements.txt
+```
+
+Then you should be able to run `track.py` from the main directory. 
+
 ## Usage
 
 For a list of command line arguments, run
