@@ -8,6 +8,7 @@ import argparse
 import urllib2
 import time
 import math
+import sys
 import re
 import os.path
 
@@ -181,25 +182,26 @@ def simpleAzim(angle):
     part = int(part + 0.5) % len(AZIM)
     return AZIM[part]
 
-def liveTrack(orbData):
+def liveTrack(args, orbData):
     # calculate current satellite data
     visible = list()
     now = datetime.utcnow()
     for satID in orbData.getSatellites():
         try:
-            (azim, elev) = orbData.getAzimElev(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
-            if elev > 0:
-                (alt, dist) = orbData.getDistance(satID, now, OBS_LAT, OBS_LON, OBS_ALT)
-                visible.append((satID, azim, elev, dist, alt))
+            (azim, elev) = orbData.getAzimElev(satID, now, args.lat, args.lon, args.alt)
+            if elev < args.horizon:
+                continue
+            (alt, dist) = orbData.getDistance(satID, now, args.lat, args.lon, args.alt)
+            visible.append((satID, azim, elev, dist, alt))
         except NotImplementedError:
             pass
 
     # clear display
-    print "\x1b[H\x1b[2J"
+    sys.stdout.write("\x1b[H\x1b[2J")
     
     # update display
-    print "%3s %-25s %7s %4s %7s %-25s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm')
-    print "-----------------------------------------------------------------------------------------------"
+    print "%3s %-25s %7s %4s %7s %-32s [%8s]" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm', now.strftime('%H:%M:%S'))
+    print "---------------------------------------------------------------------------------[ACTIVE SATS]" 
     row = 1   
     for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
@@ -216,7 +218,10 @@ def liveTrack(orbData):
         comm = ' '.join(commList)
         print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
         row += 1
-    print "-----------------------------------------------------------------------------------------------"
+        
+    print
+
+    print "---------------------------------------------------------------------------------[OTHER  SATS]"
     row = 1   
     for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
@@ -236,10 +241,9 @@ def liveTrack(orbData):
 
 def predict(args, orbData):
     now = datetime.utcnow()
-    future = 5
     passList = list()
     for satID in orbData.getSatellites():
-        passes = orbData.getNextPasses(satID, now, future, args.lat, args.lon, args.alt)
+        passes = orbData.getNextPasses(satID, now, args.hours, args.lat, args.lon, args.alt)
         for (time_rise, time_set, time_max) in passes:
             (azim, elev) = orbData.getAzimElev(satID, time_max, args.lat, args.lon, args.alt)
             if elev < args.horizon:
@@ -270,21 +274,25 @@ def main(args):
     orbData = TLEData()
     
     if args.command == 'track':
-        while True:   
-            liveTrack(orbData)
-            # sleep
-            time.sleep(1)
+        try:
+            while True:
+                liveTrack(args, orbData)
+                # sleep
+                time.sleep(1)
+        except KeyboardInterrupt:
+            sys.exit()
     elif args.command == 'predict':
         predict(args, orbData)
     
 if __name__ == '__main__':    
     parser = argparse.ArgumentParser(description='Track the amateur satellites in orbit')
-    parser.add_argument('command', choices=['track', 'predict'], nargs='?', default='track', help='Action: either track live positions or predict next passes')
-    parser.add_argument('--lat', help='Observer latitude (degrees floating point)', type=float, default=OBS_LAT)
-    parser.add_argument('--lon', help='Observer longitude (degrees floating point)', type=float, default=OBS_LON)
-    parser.add_argument('--alt', help='Observer altitude (meters)', type=float, default=OBS_ALT)
-    parser.add_argument('--horizon', help='Horizon elevation (degrees)', type=float, default=OBS_HORIZON)
-    parser.add_argument('--sort', choices=['elev', 'time', 'name'], nargs='?', default='elev', help='Sorting key')
+    parser.add_argument('command', choices=['track', 'predict'], default='track', nargs='?', help='Action: either track live positions or predict next passes')
+    parser.add_argument('--lat', type=float, default=OBS_LAT, help='Observer latitude (degrees floating point)')
+    parser.add_argument('--lon', type=float, default=OBS_LON, help='Observer longitude (degrees floating point)')
+    parser.add_argument('--alt', type=float, default=OBS_ALT, help='Observer altitude (meters)')
+    parser.add_argument('--horizon', type=float, default=OBS_HORIZON, help='Horizon elevation (degrees)')
+    parser.add_argument('--hours', type=float, default=1, help='Prediction window (in hours)')
+    parser.add_argument('--sort', choices=['elev', 'time', 'name'], default='elev', nargs='?', help='Sorting key')
 
     args = parser.parse_args()
     main(args)
