@@ -17,6 +17,12 @@ OBS_LON = 3.7
 OBS_ALT = 36
 OBS_HORIZON = 5
 
+# maximum age of TLE data, in seconds
+MAX_TLE_AGE = 3600
+
+# maximum age of satellite data, in seconds
+MAX_SAT_AGE = 3600*24
+
 class TLEData:
     SOURCES = ['amateur.txt', 'cubesat.txt', 'stations.txt', 'weather.txt']
     BASEURL = r'http://celestrak.com/NORAD/elements/'
@@ -35,15 +41,19 @@ class TLEData:
         self.orbByID = dict()
         self.satByID = dict()
         
-        if not os.path.isfile(self.TLE_DB):
-            self.updateAllTLE()
-            
-        if not os.path.isfile(self.SAT_DB):
-            self.updateAllSat()
+        self.updateAllTLE()            
+        self.updateAllSat()
             
         self.loadAll()
 
     def updateAllTLE(self):
+        if os.path.isfile(self.TLE_DB):
+            modified = datetime.fromtimestamp(os.path.getmtime(self.TLE_DB))
+            age = datetime.utcnow() - modified
+            if age.total_seconds() < MAX_TLE_AGE:
+                return
+
+        print "Downloading TLE data..."
         tleData = list()
         for source in self.SOURCES:
             url = self.BASEURL + source
@@ -62,6 +72,13 @@ class TLEData:
                 fileOut.write('%s\n' % line)
 
     def updateAllSat(self):
+        if os.path.isfile(self.SAT_DB):
+            modified = datetime.fromtimestamp(os.path.getmtime(self.SAT_DB))
+            age = datetime.utcnow() - modified
+            if age.total_seconds() < MAX_SAT_AGE:
+                return
+
+        print "Downloading satellite comm data..."
         satData = list()
         url = self.SATSURL
         response = urllib2.urlopen(url)
