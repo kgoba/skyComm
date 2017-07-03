@@ -24,7 +24,7 @@ MAX_TLE_AGE = 3600
 MAX_SAT_AGE = 3600*24
 
 class TLEData:
-    SOURCES = ['amateur.txt', 'cubesat.txt', 'stations.txt', 'weather.txt']
+    SOURCES = ['amateur.txt', 'cubesat.txt', 'stations.txt', 'weather.txt', 'tle-new.txt']
     BASEURL = r'http://celestrak.com/NORAD/elements/'
     SATSURL = r'http://www.ne.jp/asahi/hamradio/je9pel/satslist.csv'
 
@@ -90,6 +90,7 @@ class TLEData:
                 fileOut.write('%s\n' % line)        
             
     def loadAll(self):
+        # read satellite TLE data and store by satellite ID
         with open(self.TLE_DB, 'r') as dbFile:
             while dbFile:
                 header = dbFile.readline().rstrip()
@@ -105,17 +106,7 @@ class TLEData:
                     #print "Failed to create TLE for", name
                     pass
 
-        nameFix = dict()
-        try:
-            with open(self.FIX_DB, 'r') as dbFile:
-                for line in dbFile:
-                    line = line.rstrip()
-                    fields = line.split(',')
-                    if len(fields) == 2:
-                        nameFix[fields[0]] = fields[1]
-        except:
-            pass
-
+        # read satellite communication parameters
         with open(self.SAT_DB, 'r') as dbFile:
             for line in dbFile:
                 line = line.rstrip()
@@ -128,25 +119,21 @@ class TLEData:
                 mode = fields[5].rstrip()
                 status = fields[7].rstrip()
                 
-                if not satID:
+                if satID:
+                    self.satByID[satID] = (uplink, downlink, beacon, mode, status, name)
+                #else:
                     #print "Ignoring", name, satID, status
                     #if status == 'active' or status == 'Operational':
                         #print name, name in self.orbByName
                         #if name in nameFix:
                         #    name = nameFix[name]
                         #    print name                        
-                    pass
-                else:
-                    self.satByID[satID] = (uplink, downlink, beacon, mode, status, name)
                     
+        # Intersection of satellites with TLE info and comms info
         self.satIDs = set(self.orbByID.keys()) & set(self.satByID.keys())
-        #print len(self.orbByID.keys())
-        #print len(self.satByID.keys())
-        #print len(self.satIDs)
-        
         #missing = set(self.satByID.keys()) - set(self.orbByID.keys())
-        #missingNames = [self.satByID[x][5] + ': ' + self.satByID[x][4] for x in missing]
-        #print '\n'.join(missingNames)
+        #print ', '.join(sorted([self.orbByID[x].satellite_name for x in self.satIDs]))
+        return
 
     def getSatellites(self):
         #return self.orbByID.keys()
@@ -217,8 +204,8 @@ def liveTrack(args, orbData):
     sys.stdout.write("\x1b[H\x1b[2J")
     
     # update display
-    print "%3s %-25s %7s %4s %7s %-32s [%8s]" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm', now.strftime('%H:%M:%S'))
-    print "---------------------------------------------------------------------------------[ACTIVE SATS]" 
+    print "%3s %-25s %7s %4s %7s %-28s [%8s UTC]" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm', now.strftime('%H:%M:%S'))
+    print "[ACTIVE SATS]---------------------------------------------------------------------------------" 
     row = 1   
     for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
@@ -231,14 +218,14 @@ def liveTrack(args, orbData):
         if up: commList.append('U[%s]' % up)
         if down: commList.append('D[%s]' % down)
         if beacon: commList.append('B[%s]' % beacon)
-        if mode: commList.append('M[%s]' % mode)
+        if mode: commList.append('%s' % mode)
         comm = ' '.join(commList)
         print "%3d %-25s %4.0f %2s %4.0f %7.0f %-25s" % (row, name, azim, simpleAzim(azim), elev, dist, comm)
         row += 1
         
     print
 
-    print "---------------------------------------------------------------------------------[OTHER  SATS]"
+    print "[OTHER  SATS]---------------------------------------------------------------------------------"
     row = 1   
     for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
@@ -260,7 +247,7 @@ def predict(args, orbData):
     now = datetime.utcnow()
     passList = list()
     for satID in orbData.getSatellites():
-        passes = orbData.getNextPasses(satID, now, args.hours, args.lat, args.lon, args.alt)
+        passes = orbData.getNextPasses(satID, now, int(args.hours), args.lat, args.lon, args.alt)
         for (time_rise, time_set, time_max) in passes:
             (azim, elev) = orbData.getAzimElev(satID, time_max, args.lat, args.lon, args.alt)
             if elev < args.horizon:
@@ -268,6 +255,8 @@ def predict(args, orbData):
             (alt, dist) = orbData.getDistance(satID, time_max, args.lat, args.lon, args.alt)
             passList.append((satID, time_max, azim, elev, dist))
             
+    print "%3s %-25s %7s %3s %5s %18s %s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Max. elevation', 'Comm')
+    print "[PREDICTION]-------------------------------------------------------------------------------" 
     row = 1
     for (satID, time_max, azim, elev, dist) in sorted(passList, key = lambda x: -x[3]):
         name = orbData.getName(satID)
@@ -281,9 +270,9 @@ def predict(args, orbData):
         if up: commList.append('U[%s]' % up)
         if down: commList.append('D[%s]' % down)
         if beacon: commList.append('B[%s]' % beacon)
-        if mode: commList.append('M[%s]' % mode)
+        if mode: commList.append('%s' % mode)
         comm = ' '.join(commList)
-        print "%3d %-25s %4.0f %3.0f %5.0f %9s (%3.0f min) %s" % (row, name, azim, elev, dist, time_max.strftime('%H:%M:%S'), fromNow.total_seconds()/60, comm)
+        print "%3d %-25s %4.0f %2s %3.0f %5.0f %9s (%3.0f min) %s" % (row, name, azim, simpleAzim(azim), elev, dist, time_max.strftime('%H:%M:%S'), fromNow.total_seconds()/60, comm)
         row += 1
         #print row, satID, passes
 
