@@ -179,8 +179,13 @@ class TLEData:
         ry = pos_y - opos_y
         rz = pos_z - opos_z
         
+        vx = vel_x - ovel_x
+        vy = vel_y - ovel_y
+        vz = vel_z - ovel_z
+        
         r = math.sqrt(rx*rx + ry*ry + rz*rz)
-        return (alt2, r)
+        v = math.sqrt(vx*vx + vy*vy + vz*vz)
+        return (alt2, r, v)
     
     def parseEntry(self, header):
         m1 = self.RX_SATNAME.match(header)
@@ -208,8 +213,8 @@ def liveTrack(args, orbData):
             (azim, elev) = orbData.getAzimElev(satID, now, args.lat, args.lon, args.alt)
             if elev < args.horizon:
                 continue
-            (alt, dist) = orbData.getDistance(satID, now, args.lat, args.lon, args.alt)
-            visible.append((satID, azim, elev, dist, alt))
+            (alt, dist, vel) = orbData.getDistance(satID, now, args.lat, args.lon, args.alt)
+            visible.append((satID, azim, elev, dist, vel, alt))
         except NotImplementedError:
             pass
 
@@ -220,7 +225,7 @@ def liveTrack(args, orbData):
     print "%3s %-25s %7s %4s %7s %-32s [%8s]" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm', now.strftime('%H:%M:%S'))
     print "---------------------------------------------------------------------------------[ACTIVE SATS]" 
     row = 1   
-    for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
+    for (satID, azim, elev, dist, vel, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
         comm = orbData.getSatInfo(satID)
         (up, down, beacon, mode, status, name2) = comm
@@ -240,7 +245,7 @@ def liveTrack(args, orbData):
 
     print "---------------------------------------------------------------------------------[OTHER  SATS]"
     row = 1   
-    for (satID, azim, elev, dist, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
+    for (satID, azim, elev, dist, vel, alt) in sorted(visible, key = lambda x: x[2], reverse=True):
         name = orbData.getName(satID)
         comm = orbData.getSatInfo(satID)
         (up, down, beacon, mode, status, name2) = comm
@@ -265,7 +270,7 @@ def predict(args, orbData):
             (azim, elev) = orbData.getAzimElev(satID, time_max, args.lat, args.lon, args.alt)
             if elev < args.horizon:
                 continue
-            (alt, dist) = orbData.getDistance(satID, time_max, args.lat, args.lon, args.alt)
+            (alt, dist, vel) = orbData.getDistance(satID, time_max, args.lat, args.lon, args.alt)
             passList.append((satID, time_max, azim, elev, dist))
             
     row = 1
