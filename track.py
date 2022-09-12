@@ -6,7 +6,7 @@ from texttable import Texttable
 
 from datetime import datetime, timedelta
 import argparse
-import urllib2
+from urllib.request import urlopen
 import time
 import math
 import sys
@@ -60,11 +60,11 @@ class TLEData:
             if age.total_seconds() < MAX_TLE_AGE:
                 return
 
-        print "Downloading TLE data..."
+        print("Downloading TLE data...")
         tleData = list()
         for source in self.SOURCES:
             url = self.BASEURL + source
-            response = urllib2.urlopen(url)
+            response = urlopen(url)
             while response:
                 header = response.readline().rstrip()
                 if not header: break
@@ -76,7 +76,7 @@ class TLEData:
                 tleData.append(line2)
         with open(self.TLE_DB, 'w') as fileOut:
             for line in tleData:
-                fileOut.write('%s\n' % line)
+                fileOut.write('%s\n' % line.decode('utf-8'))
 
     def updateAllSat(self):
         if os.path.isfile(self.SAT_DB):
@@ -85,16 +85,16 @@ class TLEData:
             if age.total_seconds() < MAX_SAT_AGE:
                 return
 
-        print "Downloading satellite comm data..."
+        print("Downloading satellite comm data...")
         satData = list()
         url = self.SATSURL
-        response = urllib2.urlopen(url)
+        response = urlopen(url)
         for line in response:
             line = line.rstrip()
             satData.append(line)
         with open(self.SAT_DB, 'w') as fileOut:
             for line in satData:
-                fileOut.write('%s\n' % line)        
+                fileOut.write('%s\n' % line.decode('utf-8'))        
             
     def loadAll(self):
         # read satellite TLE data and store by satellite ID
@@ -110,7 +110,7 @@ class TLEData:
                     satID = orb.tle.satnumber
                     self.orbByID[satID] = orb
                 except Exception as e:
-                    #print "Failed to create TLE for", name, '(%s)' % str(e)
+                    #print("Failed to create TLE for", name, '(%s)' % str(e))
                     pass
 
         # read satellite communication parameters
@@ -129,17 +129,17 @@ class TLEData:
                 if satID:
                     self.satByID[satID] = (uplink, downlink, beacon, mode, status, name)
                 #else:
-                    #print "Ignoring", name, satID, status
+                    #print("Ignoring", name, satID, status)
                     #if status == 'active' or status == 'Operational':
-                        #print name, name in self.orbByName
+                        #print(name, name in self.orbByName)
                         #if name in nameFix:
                         #    name = nameFix[name]
-                        #    print name                        
+                        #    print(name)
                     
         # Intersection of satellites with TLE info and comms info
         self.satIDs = set(self.orbByID.keys()) # & set(self.satByID.keys())
         #missing = set(self.satByID.keys()) - set(self.orbByID.keys())
-        #print ', '.join(sorted([self.orbByID[x].satellite_name for x in self.satIDs]))
+        #print(', '.join(sorted([self.orbByID[x].satellite_name for x in self.satIDs])))
         return
 
     def getSatellites(self):
@@ -241,8 +241,7 @@ def liveTrack(args, orbData):
     sys.stdout.write("\x1b[H\x1b[2J")
     
     # update display
-    print "%3s %-25s %7s %4s %7s %-28s [%8s UTC]" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Comm', now.strftime('%H:%M:%S'))
-    print "[ACTIVE SATS]---------------------------------------------------------------------------------" 
+    print("[ACTIVE SATS]--------------------------------------------------------------------[%8s UTC]" % now.strftime('%H:%M:%S'))
     table = Texttable()
     table.set_deco(0)
     table.set_max_width(0)
@@ -268,10 +267,10 @@ def liveTrack(args, orbData):
         table.add_row(("%d|%s|%.0f|%.0f|%.0f|%.2f|%s" % (row, name, azim, elev, dist, vel_r, comm)).split('|'))
         row += 1
     
-    print table.draw()
-    print
+    print(table.draw())
+    print()
 
-    print "[OTHER  SATS]---------------------------------------------------------------------------------"
+    print("[OTHER  SATS]---------------------------------------------------------------------------------")
     table = Texttable()
     table.set_deco(0)
     table.set_max_width(0)
@@ -288,11 +287,15 @@ def liveTrack(args, orbData):
         if status == 'active' or status == 'Operational':
             continue
         commList = list()
+        if down: commList.append('D[%s]' % down)
+        if up:   commList.append('U[%s]' % up)
+        if beacon: commList.append('B[%s]' % beacon)
+        if mode: commList.append('%s' % mode)
         commList.append(status)
         comm = ' '.join(commList)
         table.add_row(("%d|%s|%.0f|%.0f|%.0f|%.2f|%s" % (row, name, azim, elev, dist, vel_r, comm)).split('|'))
         row += 1
-    print table.draw()
+    print(table.draw())
 
 
 def predict(args, orbData):
@@ -307,8 +310,8 @@ def predict(args, orbData):
             (alt, dist, vel) = orbData.getDistance(satID, time_max, args.lat, args.lon, args.alt)
             passList.append((satID, time_max, azim, elev, dist))
             
-    print "%3s %-25s %7s %3s %5s %18s %s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Max. elevation', 'Comm')
-    print "[PREDICTION]-------------------------------------------------------------------------------" 
+    print("%3s %-25s %7s %3s %5s %18s %s" % ('#', 'Name', 'Azim', 'Elev', 'Dist', 'Max. elevation', 'Comm'))
+    print("[PREDICTION]-------------------------------------------------------------------------------")
     row = 1
     for (satID, time_max, azim, elev, dist) in sorted(passList, key = lambda x: -x[3]):
         name = orbData.getName(satID)
@@ -324,9 +327,9 @@ def predict(args, orbData):
         if beacon: commList.append('B[%s]' % beacon)
         if mode: commList.append('%s' % mode)
         comm = ' '.join(commList)
-        print "%3d %-25s %4.0f %2s %3.0f %5.0f %9s (%3.0f min) %s" % (row, name, azim, simpleAzim(azim), elev, dist, time_max.strftime('%H:%M:%S'), fromNow.total_seconds()/60, comm)
+        print("%3d %-25s %4.0f %2s %3.0f %5.0f %9s (%3.0f min) %s" % (row, name, azim, simpleAzim(azim), elev, dist, time_max.strftime('%H:%M:%S'), fromNow.total_seconds()/60, comm))
         row += 1
-        #print row, satID, passes
+        #print(row, satID, passes)
 
 
 def main(args):
